@@ -7,14 +7,86 @@
 // ENTRY POINT
 // ─────────────────────────────────────────────────────────────
 
+/**
+ * doGet: nếu có ?action=xxx → REST API (cho GitHub Pages).
+ * Nếu không có action → phục vụ HTML app (GAS web app mode).
+ */
 function doGet(e) {
-  return HtmlService.createTemplateFromFile('index')
-    .evaluate()
-    .setTitle('LAVIPCO — Quản lý Dòng tiền')
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+  var action = e && e.parameter && e.parameter.action;
+
+  if (!action) {
+    // GAS web app mode (fallback)
+    return HtmlService.createTemplateFromFile('index')
+      .evaluate()
+      .setTitle('LAVIPCO — Quản lý Dòng tiền')
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+  }
+
+  // REST API mode — GitHub Pages gọi qua fetch()
+  try {
+    var p = e.parameter;
+    var result;
+    switch (action) {
+      case 'getOverviewData':    result = getOverviewData(); break;
+      case 'getForecastData':    result = getForecastData(); break;
+      case 'getProjectList':     result = getProjectList(); break;
+      case 'getAccountList':     result = getAccountList(); break;
+      case 'getPartnerList':     result = getPartnerList(); break;
+      case 'getCategoryList':    result = getCategoryList(); break;
+      case 'getPlanList':        result = getPlanList(p.maDuAn); break;
+      case 'getTransactionList':
+        result = getTransactionList({
+          maDuAn: p.maDuAn, maTK: p.maTK,
+          loaiThuChi: p.loaiThuChi, tuNgay: p.tuNgay, denNgay: p.denNgay
+        });
+        break;
+      case 'getCashBook':        result = getCashBook(p.tuNgay, p.denNgay); break;
+      case 'getCongNo':          result = getCongNo(); break;
+      case 'getProjectReport':   result = getProjectReport(p.maDuAn); break;
+      case 'getDocumentList':    result = getDocumentList(p.maDuAn || null); break;
+      default: throw new Error('Unknown action: ' + action);
+    }
+    return jsonResponse_({ ok: true, data: result });
+  } catch (err) {
+    return jsonResponse_({ ok: false, error: err.message });
+  }
 }
 
-/** Helper: nhúng file HTML khác vào template index.html */
+/**
+ * doPost: tất cả thao tác ghi (submit, delete, import…).
+ * Body: JSON { action, ...params }
+ */
+function doPost(e) {
+  try {
+    var body   = JSON.parse(e.postData.contents);
+    var action = body.action;
+    var result;
+    switch (action) {
+      case 'submitTransaction':    result = submitTransaction(body.data); break;
+      case 'deleteTransaction':    result = deleteTransaction(body.maGD); break;
+      case 'submitKhopKeHoach':    result = submitKhopKeHoach(body.maKH, body.maGD); break;
+      case 'submitHuyKhop':        result = submitHuyKhop(body.maKH); break;
+      case 'importBankStatement':  result = importBankStatement(body.csvText, body.maTK); break;
+      case 'confirmImport':        result = confirmImport(body.rows, body.maTK, body.maDuAn); break;
+      case 'classifyDocument':     result = classifyDocument(body.tenFile, body.contentBase64); break;
+      case 'saveDocumentMeta':     result = saveDocumentMeta(body.data); break;
+      case 'confirmDocumentSaved': result = confirmDocumentSaved(body.maHoSo); break;
+      default: throw new Error('Unknown action: ' + action);
+    }
+    return jsonResponse_({ ok: true, data: result });
+  } catch (err) {
+    return jsonResponse_({ ok: false, error: err.message });
+  }
+}
+
+/** Helper: trả về JSON response */
+function jsonResponse_(data) {
+  return ContentService
+    .createTextOutput(JSON.stringify(data))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+/** Helper: nhúng file HTML (dùng khi chạy GAS web app mode) */
 function include(filename) {
   return HtmlService.createHtmlOutputFromFile(filename).getContent();
 }

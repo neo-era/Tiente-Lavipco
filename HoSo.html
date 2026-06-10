@@ -1,0 +1,339 @@
+<style>
+.hs-drop-zone{border:2px dashed var(--border,#DADCE0);border-radius:var(--radius,8px);padding:32px;text-align:center;cursor:pointer;transition:border-color .2s,background .2s;margin-bottom:16px}
+.hs-drop-zone.drag-over{border-color:var(--blue,#1967D2);background:var(--blue-lt,#E8F0FE)}
+.hs-drop-zone-icon{font-size:36px;margin-bottom:8px}
+.hs-drop-zone p{color:var(--gray,#5F6368);font-size:13px;margin:0}
+.hs-drop-zone .btn{margin-top:12px}
+#hsFileInput{display:none}
+
+.hs-result{background:var(--green-lt,#E6F4EA);border:1px solid #A8D5B5;border-radius:var(--radius,8px);padding:16px;margin-bottom:16px;display:none}
+.hs-result-row{display:flex;gap:8px;align-items:center;margin-bottom:8px;font-size:13px}
+.hs-result-label{font-weight:600;min-width:120px;color:var(--gray,#5F6368)}
+.hs-path-box{display:flex;align-items:center;gap:8px;flex:1}
+.hs-path-box code{flex:1;background:#fff;border:1px solid var(--border,#DADCE0);border-radius:4px;padding:6px 10px;font-size:12px;overflow-x:auto;white-space:nowrap}
+.hs-loading{text-align:center;padding:24px;color:var(--gray,#5F6368);display:none}
+
+.hs-tin-cay-Cao{color:var(--green,#137333);font-weight:600}
+.hs-tin-cay-Trung{color:#E65100;font-weight:600}
+.hs-tin-cay-Thap{color:var(--red,#D93025);font-weight:600}
+
+.hs-filter-bar{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+.hs-filter-bar select{padding:7px 10px;border:1px solid var(--border,#DADCE0);border-radius:6px;font-size:13px;background:#fff}
+
+.hs-cho-luu{background:#FFFDE7!important}
+</style>
+
+<!-- PHẦN 1: Upload & Phân loại -->
+<div class="section" id="hsSectionUpload">
+  <div class="section-title">📄 Upload & Phân loại hồ sơ</div>
+
+  <div class="hs-drop-zone" id="hsDropZone"
+       ondragover="hsDragOver(event)" ondragleave="hsDragLeave(event)" ondrop="hsDrop(event)"
+       onclick="document.getElementById('hsFileInput').click()">
+    <div class="hs-drop-zone-icon">📁</div>
+    <p>Kéo thả file vào đây hoặc</p>
+    <button type="button" class="btn btn-outline" onclick="event.stopPropagation();document.getElementById('hsFileInput').click()">Chọn file</button>
+    <p style="margin-top:8px;font-size:11px">PDF, Word (.docx), Excel (.xlsx), ảnh (JPG/PNG) — tối đa 10MB</p>
+  </div>
+  <input type="file" id="hsFileInput" accept=".pdf,.docx,.xlsx,.jpg,.jpeg,.png"
+         onchange="hsOnFileSelect(this.files[0])">
+
+  <!-- Loading phân tích -->
+  <div class="hs-loading" id="hsLoading">
+    <div class="spinner" style="width:28px;height:28px;border-width:2px;margin:0 auto 8px"></div>
+    <div>Đang phân tích file...</div>
+  </div>
+
+  <!-- Kết quả phân loại -->
+  <div class="hs-result" id="hsResult">
+    <div class="section-title" style="margin-bottom:12px">Kết quả phân tích</div>
+
+    <div class="hs-result-row">
+      <span class="hs-result-label">Tên file</span>
+      <span id="hsRFileName" style="font-weight:500"></span>
+    </div>
+    <div class="hs-result-row">
+      <span class="hs-result-label">Loại tài liệu</span>
+      <span id="hsRLoai"></span>
+      <span id="hsRDoTinCay" style="font-size:11px;margin-left:8px"></span>
+    </div>
+    <div class="hs-result-row">
+      <span class="hs-result-label">Dự án</span>
+      <select id="hsRDuAn" style="padding:6px 10px;border:1px solid var(--border,#DADCE0);border-radius:6px;font-size:13px;min-width:200px"
+              onchange="hsUpdatePath()">
+        <option value="">— chọn dự án —</option>
+      </select>
+    </div>
+    <div class="hs-result-row" style="align-items:flex-start">
+      <span class="hs-result-label">Đường dẫn lưu</span>
+      <div class="hs-path-box">
+        <code id="hsRPath">—</code>
+        <button type="button" class="btn btn-outline btn-sm" onclick="hsCopyPath()" title="Copy đường dẫn">📋</button>
+      </div>
+    </div>
+    <div class="hs-result-row">
+      <span class="hs-result-label">Mô tả AI</span>
+      <span id="hsRMoTa" style="font-size:13px;color:var(--gray,#5F6368)"></span>
+    </div>
+
+    <div style="display:flex;gap:8px;margin-top:12px;justify-content:flex-end">
+      <button type="button" class="btn btn-outline" onclick="hsCancelUpload()">Hủy</button>
+      <button type="button" class="btn btn-success" id="hsBtnLuu" onclick="hsLuuMetadata()">✅ Xác nhận & Lưu metadata</button>
+    </div>
+  </div>
+</div>
+
+<!-- PHẦN 2: Danh sách hồ sơ -->
+<div class="section" id="hsSectionList">
+  <div class="section-title">📋 Danh sách hồ sơ</div>
+
+  <div class="hs-filter-bar">
+    <select id="hsFilterDuAn" onchange="hsLoadList()">
+      <option value="">Tất cả dự án</option>
+    </select>
+    <select id="hsFilterLoai" onchange="hsLoadList()">
+      <option value="">Tất cả loại</option>
+      <option value="HopDong">Hợp đồng</option>
+      <option value="BienBan">Biên bản</option>
+      <option value="ThanhToan">Thanh toán</option>
+      <option value="BanVe">Bản vẽ</option>
+      <option value="HoaDon">Hóa đơn</option>
+      <option value="Khac">Khác</option>
+    </select>
+    <select id="hsFilterTrangThai" onchange="hsLoadList()">
+      <option value="">Tất cả trạng thái</option>
+      <option value="ChoLuu">Chờ lưu</option>
+      <option value="DaLuu">Đã lưu</option>
+    </select>
+  </div>
+
+  <div class="tbl-wrap">
+    <table id="tblHoSo">
+      <thead>
+        <tr><th>Tên file</th><th>Loại</th><th>Dự án</th><th>Đường dẫn</th><th>Ngày</th><th>Trạng thái</th><th></th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+var _hsCurrentFile     = null;
+var _hsCurrentB64      = '';
+var _hsCurrentClassify = null;
+var _hsProjects        = [];
+
+var _LOAI_LABEL = {
+  HopDong:'📜 Hợp đồng', BienBan:'📋 Biên bản', ThanhToan:'💳 Thanh toán',
+  BanVe:'📐 Bản vẽ', HoaDon:'🧾 Hóa đơn', Khac:'📦 Khác'
+};
+
+// Init khi HoSo panel được mở (gọi từ index.html onPanelOpen)
+function initHoSo() {
+  _hsProjects = _projects || [];
+  populateSelect('hsFilterDuAn', _hsProjects, 'maDuAn', 'tenDuAn', 'Tất cả dự án');
+  var rDA = document.getElementById('hsRDuAn');
+  rDA.innerHTML = '<option value="">— chọn dự án —</option>' +
+    _hsProjects.map(function(p){ return '<option value="'+esc(p.maDuAn)+'">'+esc(p.tenDuAn)+'</option>'; }).join('');
+  hsLoadList();
+}
+
+// ─── DRAG & DROP ───
+function hsDragOver(e) {
+  e.preventDefault();
+  document.getElementById('hsDropZone').classList.add('drag-over');
+}
+function hsDragLeave(e) {
+  document.getElementById('hsDropZone').classList.remove('drag-over');
+}
+function hsDrop(e) {
+  e.preventDefault();
+  document.getElementById('hsDropZone').classList.remove('drag-over');
+  var f = e.dataTransfer.files[0];
+  if (f) hsOnFileSelect(f);
+}
+
+// ─── FILE SELECT ───
+function hsOnFileSelect(file) {
+  if (!file) return;
+  if (file.size > 10 * 1024 * 1024) { toast('File vượt quá 10MB', true); return; }
+
+  _hsCurrentFile = file;
+  _hsCurrentB64  = '';
+
+  document.getElementById('hsLoading').style.display = 'block';
+  document.getElementById('hsResult').style.display  = 'none';
+
+  var reader = new FileReader();
+  reader.onload = function(ev) {
+    // base64 = phần sau dấu phẩy trong Data URL
+    var b64 = ev.target.result.split(',')[1] || '';
+    _hsCurrentB64 = b64;
+
+    google.script.run
+      .withSuccessHandler(hsShowResult)
+      .withFailureHandler(function(e){ document.getElementById('hsLoading').style.display='none'; errFn(e); })
+      .classifyDocument(file.name, b64);
+  };
+  reader.readAsDataURL(file);
+}
+
+// ─── HIỂN THỊ KẾT QUẢ PHÂN LOẠI ───
+function hsShowResult(r) {
+  _hsCurrentClassify = r;
+  document.getElementById('hsLoading').style.display = 'none';
+  document.getElementById('hsResult').style.display  = 'block';
+
+  document.getElementById('hsRFileName').textContent = _hsCurrentFile ? _hsCurrentFile.name : '';
+  document.getElementById('hsRLoai').textContent     = _LOAI_LABEL[r.loai] || r.loai;
+  document.getElementById('hsRMoTa').textContent     = r.moTa || '';
+
+  var tinCayEl = document.getElementById('hsRDoTinCay');
+  var tc = r.doTinCay || 'Thap';
+  tinCayEl.textContent  = '(Độ tin cậy: ' + tc + ')';
+  tinCayEl.className    = 'hs-tin-cay-' + (tc === 'Cao' ? 'Cao' : tc.indexOf('Trung') !== -1 ? 'Trung' : 'Thap');
+
+  // Gợi ý dự án
+  if (r.maDuAnGoiY) {
+    var sel = document.getElementById('hsRDuAn');
+    for (var i = 0; i < sel.options.length; i++) {
+      if (sel.options[i].value === r.maDuAnGoiY) { sel.selectedIndex = i; break; }
+    }
+  }
+
+  hsUpdatePath();
+}
+
+function hsUpdatePath() {
+  if (!_hsCurrentClassify || !_hsCurrentFile) return;
+  var maDuAn = document.getElementById('hsRDuAn').value;
+  if (!maDuAn) { document.getElementById('hsRPath').textContent = '— (chọn dự án trước) —'; return; }
+
+  // Tính đường dẫn phía client (gần đúng — giá trị chính xác từ server khi lưu)
+  var tenDuAn = '';
+  for (var i = 0; i < _hsProjects.length; i++) {
+    if (_hsProjects[i].maDuAn === maDuAn) { tenDuAn = _hsProjects[i].tenDuAn; break; }
+  }
+  var thuMuc = _hsCurrentClassify.tenThuMucCon || '06_Khac';
+  document.getElementById('hsRPath').textContent =
+    '[OneDrive]\\' + maDuAn + '_' + tenDuAn + '\\' + thuMuc + '\\' + _hsCurrentFile.name;
+}
+
+function hsCopyPath() {
+  var path = document.getElementById('hsRPath').textContent;
+  if (!path || path.indexOf('—') !== -1) { toast('Chưa có đường dẫn để copy', true); return; }
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(path).then(function(){ toast('Đã copy đường dẫn 📋'); });
+  } else {
+    var ta = document.createElement('textarea');
+    ta.value = path; document.body.appendChild(ta); ta.select(); document.execCommand('copy');
+    document.body.removeChild(ta); toast('Đã copy đường dẫn 📋');
+  }
+}
+
+function hsCancelUpload() {
+  _hsCurrentFile = null; _hsCurrentB64 = ''; _hsCurrentClassify = null;
+  document.getElementById('hsResult').style.display  = 'none';
+  document.getElementById('hsLoading').style.display = 'none';
+  document.getElementById('hsFileInput').value = '';
+}
+
+function hsLuuMetadata() {
+  if (!_hsCurrentFile || !_hsCurrentClassify) return;
+  var maDuAn = document.getElementById('hsRDuAn').value;
+  if (!maDuAn) { toast('Vui lòng chọn dự án', true); return; }
+
+  var btn = document.getElementById('hsBtnLuu');
+  btn.disabled = true; btn.textContent = 'Đang lưu...';
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      btn.disabled = false; btn.textContent = '✅ Xác nhận & Lưu metadata';
+      toast('Đã lưu! Hãy copy đường dẫn và lưu file vào đúng vị trí');
+      hsCancelUpload();
+      hsLoadList();
+      // Cập nhật badge
+      hsUpdateBadge();
+    })
+    .withFailureHandler(function(e){ btn.disabled=false; btn.textContent='✅ Xác nhận & Lưu metadata'; errFn(e); })
+    .saveDocumentMeta({
+      maDuAn:       maDuAn,
+      tenFile:      _hsCurrentFile.name,
+      loaiTaiLieu:  _hsCurrentClassify.loai,
+      contentBase64: _hsCurrentB64
+    });
+}
+
+// ─── DANH SÁCH ───
+function hsLoadList() {
+  var maDuAn = document.getElementById('hsFilterDuAn').value || null;
+  google.script.run
+    .withSuccessHandler(hsRenderList)
+    .withFailureHandler(errFn)
+    .getDocumentList(maDuAn);
+}
+
+function hsRenderList(rows) {
+  var filterLoai = document.getElementById('hsFilterLoai').value;
+  var filterTT   = document.getElementById('hsFilterTrangThai').value;
+  var daMap = {};
+  (_projects||[]).forEach(function(p){ daMap[p.maDuAn] = p.tenDuAn; });
+
+  if (filterLoai) rows = rows.filter(function(r){ return r.loaiTaiLieu === filterLoai; });
+  if (filterTT)   rows = rows.filter(function(r){ return r.trangThai   === filterTT; });
+
+  var soChoLuu = rows.filter(function(r){ return r.trangThai === 'ChoLuu'; }).length;
+  hsUpdateBadge(soChoLuu);
+
+  var tbody = document.querySelector('#tblHoSo tbody');
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--gray,#5F6368)">Không có hồ sơ</td></tr>';
+    return;
+  }
+  tbody.innerHTML = rows.map(function(r) {
+    var isChoLuu = r.trangThai === 'ChoLuu';
+    return '<tr class="' + (isChoLuu?'hs-cho-luu':'') + '">' +
+      '<td>' + esc(r.tenFile) + '</td>' +
+      '<td>' + esc(_LOAI_LABEL[r.loaiTaiLieu] || r.loaiTaiLieu) + '</td>' +
+      '<td>' + esc(daMap[r.maDuAn] || r.maDuAn) + '</td>' +
+      '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(r.duongDanGoiY)+'">' +
+        '<code style="font-size:11px">' + esc(r.duongDanGoiY) + '</code>' +
+        '<button class="btn-icon" style="font-size:11px" onclick="hsCopyDirect(\''+esc(r.duongDanGoiY)+'\')" title="Copy">📋</button>' +
+      '</td>' +
+      '<td>' + esc(r.ngayTao) + '</td>' +
+      '<td>' + (isChoLuu ? '<span style="color:#E65100;font-weight:600">⏳ Chờ lưu</span>' : '<span style="color:var(--green,#137333)">✅ Đã lưu</span>') + '</td>' +
+      '<td>' + (isChoLuu ? '<button class="btn btn-success btn-sm" onclick="hsXacNhanDaLuu(\''+esc(r.maHoSo)+'\')">Đã lưu</button>' : '') + '</td>' +
+      '</tr>';
+  }).join('');
+}
+
+function hsCopyDirect(path) {
+  if (!path) return;
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(path).then(function(){ toast('Đã copy đường dẫn 📋'); });
+  } else {
+    var ta = document.createElement('textarea');
+    ta.value = path; document.body.appendChild(ta); ta.select(); document.execCommand('copy');
+    document.body.removeChild(ta); toast('Đã copy 📋');
+  }
+}
+
+function hsXacNhanDaLuu(maHoSo) {
+  google.script.run
+    .withSuccessHandler(function(){ toast('Đã đánh dấu Đã lưu'); hsLoadList(); })
+    .withFailureHandler(errFn)
+    .confirmDocumentSaved(maHoSo);
+}
+
+function hsUpdateBadge(soChoLuu) {
+  var tabEl = document.getElementById('tabHoSo');
+  if (!tabEl) return;
+  var existing = tabEl.querySelector('.badge');
+  if (existing) existing.remove();
+  if (soChoLuu > 0) {
+    var b = document.createElement('span');
+    b.className = 'badge'; b.textContent = soChoLuu;
+    tabEl.appendChild(b);
+  }
+}
+</script>

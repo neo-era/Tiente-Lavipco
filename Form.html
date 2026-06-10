@@ -1,0 +1,256 @@
+<style>
+.form-row{display:flex;flex-direction:column;gap:4px;margin-bottom:14px}
+.form-row label{font-size:12px;color:var(--gray,#5F6368);font-weight:500}
+.form-row input,.form-row select,.form-row textarea{
+  padding:10px 12px;border:1px solid var(--border,#DADCE0);border-radius:6px;
+  font-size:14px;width:100%;min-height:44px;font-family:inherit;background:#fff;
+}
+.form-row input:focus,.form-row select:focus,.form-row textarea:focus{
+  outline:none;border-color:var(--blue,#1967D2);box-shadow:0 0 0 2px rgba(25,103,210,.15);
+}
+.radio-group{display:flex;gap:12px;margin-top:4px}
+.radio-group label{display:flex;align-items:center;gap:6px;font-size:14px;cursor:pointer;font-weight:400;color:#202124}
+.radio-group input[type=radio]{width:16px;height:16px;min-height:unset;cursor:pointer}
+.form-row.hidden{display:none}
+.warn-box{background:#FFF3E0;border:1px solid #FFB300;border-radius:6px;padding:10px 12px;font-size:13px;color:#E65100;margin-bottom:12px;display:none}
+.form-actions{display:flex;justify-content:flex-end;gap:8px;padding-top:8px;border-top:1px solid var(--border,#DADCE0);margin-top:16px}
+</style>
+
+<div class="warn-box" id="fWarnTonQuy"></div>
+
+<form id="frmGiaoDich" onsubmit="submitForm(event)">
+
+  <div class="form-row">
+    <label>Ngày giao dịch *</label>
+    <input type="date" id="fNgay" required>
+  </div>
+
+  <div class="form-row">
+    <label>Loại *</label>
+    <div class="radio-group">
+      <label><input type="radio" name="fLoai" value="Thu" checked onchange="onLoaiChange()"> Thu</label>
+      <label><input type="radio" name="fLoai" value="Chi" onchange="onLoaiChange()"> Chi</label>
+    </div>
+  </div>
+
+  <div class="form-row">
+    <label>Dự án *</label>
+    <select id="fDuAn" required onchange="onDuAnChange()">
+      <option value="">— chọn dự án —</option>
+    </select>
+  </div>
+
+  <div class="form-row">
+    <label>Tài khoản *</label>
+    <select id="fTaiKhoan" required onchange="onTKChange()">
+      <option value="">— chọn tài khoản —</option>
+    </select>
+  </div>
+
+  <div class="form-row hidden" id="fRowNguoi">
+    <label>Người nộp / nhận tiền</label>
+    <input type="text" id="fNguoi" placeholder="Họ tên người nộp hoặc nhận tiền">
+  </div>
+
+  <div class="form-row">
+    <label>Đối tác</label>
+    <select id="fDoiTac">
+      <option value="">— không có —</option>
+    </select>
+  </div>
+
+  <div class="form-row">
+    <label>Hạng mục</label>
+    <select id="fHangMuc">
+      <option value="">— không có —</option>
+    </select>
+  </div>
+
+  <div class="form-row">
+    <label>Số tiền *</label>
+    <input type="text" id="fSoTien" inputmode="numeric" placeholder="VD: 5.000.000" required
+           oninput="onSoTienInput()" onblur="formatSoTienDisplay()">
+  </div>
+
+  <div class="form-row">
+    <label>Kế hoạch liên kết</label>
+    <select id="fKeHoach">
+      <option value="">— không liên kết —</option>
+    </select>
+  </div>
+
+  <div class="form-row">
+    <label>Ghi chú</label>
+    <textarea id="fGhiChu" rows="2" placeholder="Ghi chú thêm (tùy chọn)"></textarea>
+  </div>
+
+  <div class="form-actions">
+    <button type="button" class="btn btn-outline" onclick="closeModal('modalForm')">Hủy</button>
+    <button type="submit" class="btn btn-primary" id="fBtnSubmit">Lưu giao dịch</button>
+  </div>
+</form>
+
+<script>
+var _tonQuyTienMat = 0;
+var _tienMatMaTK   = 'TK_TM';
+
+function initForm() {
+  // Ngày mặc định = hôm nay
+  var now = new Date();
+  document.getElementById('fNgay').value = now.getFullYear() + '-' +
+    String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
+
+  // Populate selects từ state cha (đã load trong index.html)
+  var fDuAn = document.getElementById('fDuAn');
+  fDuAn.innerHTML = '<option value="">— chọn dự án —</option>' +
+    (_projects||[]).map(function(p){ return '<option value="'+esc(p.maDuAn)+'">'+esc(p.tenDuAn)+'</option>'; }).join('');
+
+  var fTK = document.getElementById('fTaiKhoan');
+  fTK.innerHTML = '<option value="">— chọn tài khoản —</option>' +
+    (_accounts||[]).map(function(a){ return '<option value="'+esc(a.maTK)+'">'+esc(a.tenTK)+(a.nganHang?' - '+a.nganHang:'')+'</option>'; }).join('');
+
+  var fDT = document.getElementById('fDoiTac');
+  fDT.innerHTML = '<option value="">— không có —</option>' +
+    (_partners||[]).map(function(p){ return '<option value="'+esc(p.maDoiTac)+'">'+esc(p.tenDoiTac)+'</option>'; }).join('');
+
+  filterHangMuc();
+
+  // Lấy tồn quỹ từ overview (nếu có) hoặc gọi lại
+  if (window._lastOverview && window._lastOverview.tonQuyTienMat !== undefined) {
+    _tonQuyTienMat = window._lastOverview.tonQuyTienMat;
+  }
+}
+
+function onLoaiChange() {
+  filterHangMuc();
+  checkTonQuy();
+}
+
+function filterHangMuc() {
+  var loai = getLoai();
+  var fHM = document.getElementById('fHangMuc');
+  fHM.innerHTML = '<option value="">— không có —</option>' +
+    (_categories||[])
+      .filter(function(c){ return !c.loaiThuChi || c.loaiThuChi === loai; })
+      .map(function(c){ return '<option value="'+esc(c.maHangMuc)+'">'+esc(c.tenHangMuc)+'</option>'; }).join('');
+}
+
+function onTKChange() {
+  var maTK = document.getElementById('fTaiKhoan').value;
+  var isTM = maTK === _tienMatMaTK;
+  document.getElementById('fRowNguoi').classList.toggle('hidden', !isTM);
+  checkTonQuy();
+}
+
+function onDuAnChange() {
+  var maDuAn = document.getElementById('fDuAn').value;
+  var fKH = document.getElementById('fKeHoach');
+  if (!maDuAn) { fKH.innerHTML = '<option value="">— không liên kết —</option>'; return; }
+  google.script.run
+    .withSuccessHandler(function(plans) {
+      var loai = getLoai();
+      fKH.innerHTML = '<option value="">— không liên kết —</option>' +
+        plans.filter(function(p){ return p.loaiThuChi === loai; })
+             .map(function(p){ return '<option value="'+esc(p.maKeHoach)+'">'+esc(p.maKeHoach)+' — '+fmtVND(p.soTien)+'</option>'; }).join('');
+    })
+    .withFailureHandler(function(){})
+    .getPlanList(maDuAn);
+}
+
+function onSoTienInput() {
+  checkTonQuy();
+}
+
+function formatSoTienDisplay() {
+  var raw = parseSoTienInput();
+  if (raw > 0) document.getElementById('fSoTien').value = raw.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+}
+
+function parseSoTienInput() {
+  var v = document.getElementById('fSoTien').value.replace(/\./g,'').replace(/,/g,'').trim();
+  return parseInt(v,10) || 0;
+}
+
+function checkTonQuy() {
+  var maTK  = document.getElementById('fTaiKhoan').value;
+  var loai  = getLoai();
+  var warn  = document.getElementById('fWarnTonQuy');
+  if (maTK !== _tienMatMaTK || loai !== 'Chi') { warn.style.display = 'none'; return; }
+  var st = parseSoTienInput();
+  if (st > 0 && st > _tonQuyTienMat) {
+    warn.textContent = '⚠️ Số tiền chi (' + fmtVND(st) + ') vượt tồn quỹ tiền mặt hiện tại (' + fmtVND(_tonQuyTienMat) + ')';
+    warn.style.display = 'block';
+  } else {
+    warn.style.display = 'none';
+  }
+}
+
+function getLoai() {
+  var r = document.querySelector('input[name="fLoai"]:checked');
+  return r ? r.value : 'Thu';
+}
+
+function submitForm(e) {
+  e.preventDefault();
+  var soTien = parseSoTienInput();
+  if (soTien <= 0) { toast('Số tiền phải lớn hơn 0', true); return; }
+
+  var maTK = document.getElementById('fTaiKhoan').value;
+  var loai = getLoai();
+
+  // Cảnh báo vượt tồn quỹ nhưng vẫn cho submit
+  if (maTK === _tienMatMaTK && loai === 'Chi' && soTien > _tonQuyTienMat) {
+    if (!confirm('Số tiền chi vượt tồn quỹ tiền mặt. Vẫn tiếp tục?')) return;
+  }
+
+  var data = {
+    NgayGD:      document.getElementById('fNgay').value.split('-').reverse().join('/'),
+    LoaiThuChi:  loai,
+    MaDuAn:      document.getElementById('fDuAn').value,
+    MaTK:        maTK,
+    MaDoiTac:    document.getElementById('fDoiTac').value,
+    MaHangMuc:   document.getElementById('fHangMuc').value,
+    SoTien:      soTien,
+    MaKHKhop:    document.getElementById('fKeHoach').value,
+    NguoiNopThu: document.getElementById('fNguoi').value.trim(),
+    GhiChu:      document.getElementById('fGhiChu').value.trim()
+  };
+
+  var btn = document.getElementById('fBtnSubmit');
+  btn.disabled = true;
+  btn.textContent = 'Đang lưu...';
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      btn.disabled = false;
+      btn.textContent = 'Lưu giao dịch';
+      var msg = 'Đã lưu giao dịch';
+      if (res.soChungTu) msg += ' — Số CT: ' + res.soChungTu;
+      toast(msg);
+      closeModal('modalForm');
+      resetForm();
+      // Reload bảng giao dịch và cards
+      if (typeof loadTransactions === 'function') loadTransactions();
+      if (typeof loadDashboard    === 'function') loadDashboard();
+    })
+    .withFailureHandler(function(err) {
+      btn.disabled = false;
+      btn.textContent = 'Lưu giao dịch';
+      errFn(err);
+    })
+    .submitTransaction(data);
+}
+
+function resetForm() {
+  document.getElementById('frmGiaoDich').reset();
+  document.getElementById('fRowNguoi').classList.add('hidden');
+  document.getElementById('fWarnTonQuy').style.display = 'none';
+  document.getElementById('fKeHoach').innerHTML = '<option value="">— không liên kết —</option>';
+  var now = new Date();
+  document.getElementById('fNgay').value = now.getFullYear() + '-' +
+    String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
+  filterHangMuc();
+}
+
+// esc/fmtVND dùng từ scope cha (index.html)
+</script>

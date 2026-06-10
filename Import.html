@@ -1,0 +1,208 @@
+<style>
+.imp-step{display:none}.imp-step.active{display:block}
+.imp-step-title{font-weight:600;font-size:15px;margin-bottom:16px;display:flex;align-items:center;gap:8px}
+.imp-step-num{background:var(--blue,#1967D2);color:#fff;width:24px;height:24px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0}
+
+.imp-guide{background:var(--blue-lt,#E8F0FE);border-left:4px solid var(--blue,#1967D2);border-radius:4px;padding:10px 14px;font-size:13px;margin-bottom:16px;color:#174EA6}
+.imp-guide ol{margin:4px 0 0 16px;padding:0}
+.imp-guide li{margin-bottom:2px}
+
+.imp-textarea{width:100%;font-family:monospace;font-size:12px;padding:10px;border:1px solid var(--border,#DADCE0);border-radius:6px;resize:vertical;min-height:140px;background:#FAFAFA}
+.imp-textarea:focus{outline:none;border-color:var(--blue,#1967D2)}
+
+.imp-summary{background:var(--gray-lt,#F8F9FA);border-radius:6px;padding:10px 14px;font-size:13px;display:flex;flex-wrap:wrap;gap:16px;margin-bottom:12px}
+.imp-summary span{display:flex;align-items:center;gap:4px}
+
+.imp-preview-row-dup{background:#FFF3E0!important}
+.imp-preview-row-dup td:last-child{color:#E65100;font-size:11px}
+
+.imp-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;align-items:center}
+</style>
+
+<!-- BƯỚC 1: Cấu hình -->
+<div class="section imp-step active" id="impStep1">
+  <div class="imp-step-title"><span class="imp-step-num">1</span> Cấu hình import</div>
+
+  <div style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:16px">
+    <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--gray,#5F6368)">
+      Tài khoản ngân hàng *
+      <select id="impMaTK" style="padding:8px 12px;border:1px solid var(--border,#DADCE0);border-radius:6px;font-size:14px;min-width:200px">
+        <option value="">— chọn tài khoản —</option>
+      </select>
+    </label>
+    <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--gray,#5F6368)">
+      Gắn vào dự án *
+      <select id="impMaDuAn" style="padding:8px 12px;border:1px solid var(--border,#DADCE0);border-radius:6px;font-size:14px;min-width:200px">
+        <option value="">— chọn dự án —</option>
+      </select>
+    </label>
+  </div>
+
+  <div class="imp-guide">
+    <strong>Hướng dẫn lấy sao kê:</strong>
+    <ol>
+      <li>Đăng nhập internet banking → Lịch sử giao dịch</li>
+      <li>Chọn khoảng thời gian cần import</li>
+      <li>Xuất file CSV hoặc chọn tất cả → copy</li>
+      <li>Paste vào ô bên dưới và nhấn Phân tích</li>
+    </ol>
+  </div>
+
+  <textarea class="imp-textarea" id="impCsvText"
+    placeholder="Paste nội dung CSV sao kê vào đây...
+Ví dụ ACB:
+Ngày,Số tiền ghi nợ,Số tiền ghi có,Mô tả
+15/05/2026,5000000,,Trả NCC Minh Phát
+16/05/2026,,10000000,Thu hợp đồng DA-001"></textarea>
+
+  <div style="display:flex;justify-content:flex-end;margin-top:12px">
+    <button class="btn btn-primary" onclick="impPhanTich()">🔍 Phân tích CSV</button>
+  </div>
+</div>
+
+<!-- BƯỚC 3: Xem trước -->
+<div class="section imp-step" id="impStep3">
+  <div class="imp-step-title"><span class="imp-step-num">2</span> Xem trước kết quả</div>
+
+  <div class="imp-summary" id="impSummary"></div>
+
+  <div class="imp-actions" style="margin-bottom:12px">
+    <button class="btn btn-outline btn-sm" onclick="impSelectAll(true)">Chọn tất cả</button>
+    <button class="btn btn-outline btn-sm" onclick="impBoCHonTrungLap()">Bỏ chọn trùng lặp</button>
+    <span style="flex:1"></span>
+    <button class="btn btn-outline" onclick="impBack()">← Quay lại</button>
+    <button class="btn btn-success" onclick="impXacNhan()">✅ Xác nhận nhập</button>
+  </div>
+
+  <div class="tbl-wrap">
+    <table id="tblImport">
+      <thead>
+        <tr>
+          <th><input type="checkbox" id="impCheckAll" onchange="impSelectAll(this.checked)" title="Chọn tất cả"></th>
+          <th>Ngày</th><th>Loại</th><th class="amount">Số tiền</th><th>Mô tả</th><th>Trạng thái</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+var _impRows = [];
+
+function impInit() {
+  // Lọc chỉ tài khoản ngân hàng (không phải tiền mặt)
+  var bankAccounts = (_accounts||[]).filter(function(a){ return a.maTK !== 'TK_TM'; });
+  populateSelect('impMaTK',   bankAccounts, 'maTK',   'tenTK',   '— chọn tài khoản —');
+  populateSelect('impMaDuAn', _projects||[], 'maDuAn', 'tenDuAn', '— chọn dự án —');
+}
+
+function impPhanTich() {
+  var maTK   = document.getElementById('impMaTK').value;
+  var maDuAn = document.getElementById('impMaDuAn').value;
+  var csv    = document.getElementById('impCsvText').value.trim();
+
+  if (!maTK)   { toast('Vui lòng chọn tài khoản ngân hàng', true); return; }
+  if (!maDuAn) { toast('Vui lòng chọn dự án', true); return; }
+  if (!csv)    { toast('Vui lòng paste nội dung CSV sao kê', true); return; }
+
+  showLoading(true);
+  google.script.run
+    .withSuccessHandler(function(res) {
+      showLoading(false);
+      _impRows = res.preview.rows || [];
+      impRenderPreview(res.preview);
+      impShowStep('impStep3');
+    })
+    .withFailureHandler(function(e){ showLoading(false); errFn(e); })
+    .importBankStatement(csv, maTK);
+}
+
+function impRenderPreview(preview) {
+  var tongThu = preview.tongThu || 0;
+  var tongChi = preview.tongChi || 0;
+  var soTrungLap = (_impRows||[]).filter(function(r){ return r.trungLap; }).length;
+
+  document.getElementById('impSummary').innerHTML =
+    '<span>📊 <b>' + _impRows.length + '</b> hàng</span>' +
+    '<span style="color:var(--green,#137333)">📥 Thu: <b>' + fmtVND(tongThu) + '</b></span>' +
+    '<span style="color:var(--red,#D93025)">📤 Chi: <b>' + fmtVND(tongChi) + '</b></span>' +
+    (soTrungLap > 0 ? '<span style="color:#E65100">⚠️ Trùng lặp: <b>' + soTrungLap + '</b></span>' : '');
+
+  var tbody = document.querySelector('#tblImport tbody');
+  if (!_impRows.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--gray,#5F6368)">Không có dữ liệu hợp lệ</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = _impRows.map(function(r, i) {
+    var cls = r.trungLap ? 'imp-preview-row-dup' : '';
+    return '<tr class="' + cls + '">' +
+      '<td><input type="checkbox" class="imp-row-cb" data-idx="'+i+'"' + (r.checked?' checked':'') + '></td>' +
+      '<td>' + esc(r.ngay) + '</td>' +
+      '<td><span class="badge-' + (r.loaiThuChi==='Thu'?'thu':'chi') + '">' + esc(r.loaiThuChi) + '</span></td>' +
+      '<td class="amount">' + fmtVND(r.soTien) + '</td>' +
+      '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(r.moTa)+'">'+esc(r.moTa)+'</td>' +
+      '<td>' + (r.trungLap ? '<span style="color:#E65100;font-size:11px">⚠️ Trùng lặp</span>' : '<span style="color:var(--green,#137333);font-size:11px">Mới</span>') + '</td>' +
+      '</tr>';
+  }).join('');
+}
+
+function impSelectAll(checked) {
+  document.querySelectorAll('.imp-row-cb').forEach(function(cb){ cb.checked = !!checked; });
+  document.getElementById('impCheckAll').checked = !!checked;
+  _impRows.forEach(function(r){ r.checked = !!checked; });
+}
+
+function impBoCHonTrungLap() {
+  document.querySelectorAll('.imp-row-cb').forEach(function(cb) {
+    var idx = parseInt(cb.dataset.idx, 10);
+    if (_impRows[idx] && _impRows[idx].trungLap) {
+      cb.checked = false;
+      _impRows[idx].checked = false;
+    }
+  });
+}
+
+function impXacNhan() {
+  // Đọc trạng thái checkbox hiện tại
+  document.querySelectorAll('.imp-row-cb').forEach(function(cb) {
+    var idx = parseInt(cb.dataset.idx, 10);
+    if (_impRows[idx]) _impRows[idx].checked = cb.checked;
+  });
+
+  var soChon = _impRows.filter(function(r){ return r.checked; }).length;
+  if (soChon === 0) { toast('Chưa chọn hàng nào để nhập', true); return; }
+
+  var maTK   = document.getElementById('impMaTK').value;
+  var maDuAn = document.getElementById('impMaDuAn').value;
+
+  showLoading(true);
+  google.script.run
+    .withSuccessHandler(function(res) {
+      showLoading(false);
+      toast('Đã nhập ' + res.count + ' giao dịch, bỏ qua ' + (res.skipped||0) + ' hàng');
+      impReset();
+      if (typeof loadDashboard === 'function') loadDashboard();
+    })
+    .withFailureHandler(function(e){ showLoading(false); errFn(e); })
+    .confirmImport(_impRows, maTK, maDuAn);
+}
+
+function impBack() {
+  impShowStep('impStep1');
+}
+
+function impReset() {
+  _impRows = [];
+  document.getElementById('impCsvText').value = '';
+  document.getElementById('impMaTK').value   = '';
+  document.getElementById('impMaDuAn').value = '';
+  impShowStep('impStep1');
+}
+
+function impShowStep(id) {
+  document.querySelectorAll('.imp-step').forEach(function(el){ el.classList.remove('active'); });
+  document.getElementById(id).classList.add('active');
+}
+</script>
